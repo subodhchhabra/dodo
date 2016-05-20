@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 import argparse
+import calendar
+import json
 import re
 import time
 import os
+import sys
 from datetime import datetime
 from time import mktime
 
 
 DODO_FILE = os.path.join(os.getcwd(), 'DODO')
-VERSION = "0.97"
-username = os.path.split(os.path.expanduser('~'))[-1]
+VERSION = "0.99"
 
 
 class TerminalColors(object):
@@ -28,10 +30,18 @@ class TerminalColors(object):
     def __init__(self):
         pass
 
+statuses = {
+    '+': 'add',
+    '*': 'accepted',
+    '-': 'rejected',
+    '#': 'working',
+    '.': 'complete'
+}
+
 
 def pretty_date(date_string):
-    time_inst = time.strptime(date_string, "%d-%m-%y %H:%M")
-    date = datetime.fromtimestamp(mktime(time_inst))
+    timestamp = calendar.timegm((datetime.strptime(date_string, "%d-%m-%y %H:%M")).timetuple())
+    date = datetime.fromtimestamp(timestamp)
     diff = datetime.now() - date
     s = diff.seconds
     if diff.days > 7 or diff.days < 0:
@@ -85,13 +95,12 @@ def dodo_load(args):
         for content in contents:
             do_data = parse_dodo(content)
             do_dict.update({do_data["id"]: do_data})
-    file_inst.close()
     return do_dict
 
 
 def dodo_unload(final_do_base):
     content = ""
-    for key, value in final_do_base.iteritems():
+    for key, value in sorted(iter(final_do_base.items()), key=lambda key_value: int(key_value[0])):
         content += "#%s [[%s]] <<%s>> ((%s)) {{%s}}\n" % (value["id"], value["status"], value["time"],
                                                           value["user"], value["description"])
     dodo_write(content, "w")
@@ -102,13 +111,13 @@ def dodo_init(args):
     try:
         try:
             open(file_name, "r")
-            print "DoDo already exist."
+            print("DoDo already exist.")
         except IOError:
             file_inst = open(file_name, "w")
             file_inst.close()
-            print "Successfully initialized DoDo"
+            print("Successfully initialized DoDo")
     except IOError:
-        print "Cannot create file in the following location: %s" % file_name
+        print("Cannot create file in the following location: %s" % file_name)
 
 
 def dodo_write(content, mode="a"):
@@ -119,9 +128,16 @@ def dodo_write(content, mode="a"):
     dodo_list()
 
 
+def dodo_new_id ():
+    if len (do_base) == 0:
+        return "1"
+    else:
+        return str(max(int(id) for id in do_base.keys()) + 1)
+
+
 def dodo_change_status(args, mod_do_base, status):
     if not args.id:
-        print "ID (-id) can't be empty. May be try creating the task first"
+        print("ID (-id) can't be empty. May be try creating the task first")
         return
     do_entry = mod_do_base.get(args.id)
     if do_entry:
@@ -134,12 +150,12 @@ def dodo_change_status(args, mod_do_base, status):
             do_entry["time"] = args.time
     else:
         if not args.desc:
-            print "Description (-d) can't be empty"
+            print("Description (-d) can't be empty")
             return
-        do_id = str(len(mod_do_base) + 1)
+        do_id = dodo_new_id ()
         do_description = args.desc
         do_user = args.user
-        do_time = args.time or time.strftime("%d-%m-%y %H:%M", time.localtime())
+        do_time = args.time or time.strftime("%d-%m-%y %H:%M", time.gmtime())
         mod_do_base[do_id] = {
             "id": do_id,
             "time": do_time,
@@ -159,15 +175,14 @@ def dodo_add(args):
     # working
     . complete
     """
-    global username
-    do_user = args.user or username
+    do_user = args.user
     if args.operation in ["add", "propose", "c"]:
         if args.id:
-            print "Error: DoDo assigns id for you."
+            print("Error: DoDo assigns id for you.")
             exit()
-        do_id = str(len(do_base) + 1)
+        do_id = dodo_new_id ()
         do_description = args.desc
-        do_time = args.time or time.strftime("%d-%m-%y %H:%M", time.localtime())
+        do_time = args.time or time.strftime("%d-%m-%y %H:%M", time.gmtime())
         do_base[do_id] = {
             "id": do_id,
             "time": do_time,
@@ -188,65 +203,156 @@ def dodo_add(args):
         try:
             do_base.pop(args.id)
         except KeyError:
-            print "No task with id %s" % args.id
+            print("No task with id %s" % args.id)
+        dodo_unload(do_base)
+    elif args.operation == "flush":
+        for do_entry in list(do_base.values()):
+            if do_entry["status"] in ["-", "."]:
+                do_base.pop(do_entry["id"])
         dodo_unload(do_base)
     return
 
 
 def dodo_list():
     global do_base
-    print "%s%sID\tStatus\t\tDate(-t)\tOwner(-u)\t\tDescription (-d)\n%s" % (TerminalColors.BOLD,
+    print("%s%sID\tStatus\t\tDate(-t)\tOwner(-u)\t\tDescription (-d)\n%s" % (TerminalColors.BOLD,
                                                                              TerminalColors.UNDERLINE,
-                                                                             TerminalColors.END)
-    for key, value in do_base.iteritems():
+                                                                             TerminalColors.END))
+    for key, value in sorted(iter(do_base.items()), key=lambda key_value1: int(key_value1[0])):
         color = TerminalColors.YELLOW
         if value["status"] == ".":
             color = TerminalColors.GREEN
         elif value["status"] in ["-", 'x']:
             color = TerminalColors.RED
         elif value["status"] == "#":
-            color = TerminalColors.YELLOW
+            color = TerminalColors.UNDERLINE + TerminalColors.YELLOW
         elif value["status"] == "+":
             color = TerminalColors.BLUE
         user = value["user"] if value["user"] != "None" else "anonymous"
         human_time = pretty_date(value["time"])
-        print "%s%s\t[%s]\t\t%s\t(%s)\t\t%s%s" % (color, value["id"], value["status"], human_time,
-                                                  user, value["description"], TerminalColors.END)
-    print "%sAvailable Operations: c accept propose reject workon finish remove d\n" \
+        print("%s%s\t[%s]\t\t%s\t(%s)\t\t%s%s" % (color, value["id"], value["status"], human_time,
+                                                  user, value["description"], TerminalColors.END))
+    print("\n%sAvailable Operations: c accept propose reject workon finish remove d flush\n" \
           "Available Options: -id -d(description) -u(user) -t(time) -f(file)\n" \
           "Status: + proposed - rejected * accepted # working . complete%s" % (
-              TerminalColors.BOLD, TerminalColors.END)
+              TerminalColors.BOLD, TerminalColors.END))
+
+
+def dodo_import(args):
+    """
+    Sample import JSON format (same as taskwarrior export format)
+    {"id":1,"description":"Read Docs Now","entry":"20150405T020324Z","status":"pending",
+    "uuid":"1ac1893d-db66-40d7-bf67-77ca7c51a3fc","urgency":"0"}
+    """
+    do_user = args.user
+    json_file = args.input
+    json_source = json.loads(open(json_file).read())
+    for task in json_source:
+        do_id = dodo_new_id ()
+        do_description = task["description"]
+        utc_time = time.strptime(task["entry"], "%Y%m%dT%H%M%S%fZ")
+        do_time = time.strftime("%d-%m-%y %H:%M", utc_time)
+        do_status = "+"
+        if task["status"] == "pending":
+            do_status = "+"
+        if task["status"] == "completed":
+            do_status = "."
+        do_base[do_id] = {
+            "id": do_id,
+            "time": do_time,
+            "user": do_user,
+            "status": do_status,
+            "description": do_description
+        }
+    dodo_unload(do_base)
+    print("Imported %d tasks successfully" % len(json_source))
+
+
+def dodo_export(args):
+    """
+    {"id":1,"description":"Read Docs Now","entry":"20150405T020324Z","status":"pending",
+    "uuid":"1ac1893d-db66-40d7-bf67-77ca7c51a3fc","urgency":"0"}
+    Time is in UTC
+    """
+    dodo_data = []
+    for instance in sorted(list(do_base.values()), key=lambda value: int(value["id"])):
+        dodo_data.append({
+            "id": instance["id"],
+            "time": instance["time"],
+            "user": instance["user"],
+            "status": statuses[instance["status"]],
+            "description": instance["description"]
+        }
+        )
+    if args.output:
+        try:
+            file_name = args.output
+            file_inst = open(file_name, "w")
+            file_inst.write(json.dumps(dodo_data))
+            file_inst.close()
+            print("%sExported DODO to %s%s" % \
+                  (TerminalColors.GREEN, file_name, TerminalColors.END))
+        except IOError:
+            print("%sExport failed; Check for permission to create/edit %s%s" % \
+                  (TerminalColors.RED, args.output, TerminalColors.END))
+    else:
+        print("%sUse -e or --export to <filename.json> to export to a file.%s" % \
+              (TerminalColors.YELLOW, TerminalColors.END))
+        print("%s" % TerminalColors.GREEN)
+        print(dodo_data)
+        print("%s" % TerminalColors.END)
 
 
 def dodo_switch(args):
     global do_base
     if args.operation == "init":
         dodo_init(args)
-    elif args.operation in ['add', 'propose', 'accept', 'reject', 'workon', 'finish', 'remove', "c", "d"]:
+    elif args.operation in ['add', 'propose', 'accept', 'reject', 'workon', 'finish', 'flush', 'remove', "c", "d"]:
         dodo_add(args)
+    elif args.operation == 'import':
+        dodo_import(args)
+    elif args.operation == 'export':
+        dodo_export(args)
     else:
         dodo_list()
 
 
 if __name__ == "__main__":
+    default_operation = 'list'
+    default_user = os.path.split(os.path.expanduser('~'))[-1]
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", type=str,
-                        help="List all existing dodos add, propose, accept, reject, workon, finish, remove")
-    parser.add_argument("quick_access", type=str, nargs='?', default='',
+    parser.add_argument("operation", nargs='?', default=default_operation,
+                        choices=[
+                            'accept',
+                            'add',
+                            'finish',
+                            'flush',
+                            'list',
+                            'propose',
+                            'reject',
+                            'remove',
+                            'workon'
+                        ],
+                        help="The operation to perform")
+    parser.add_argument("quick_access", nargs='?', default='',
                         help="Task ID for a operation or Description for the new task")
-    parser.add_argument("-d", "--desc", "--description", type=str,
+    parser.add_argument("-d", "--desc", "--description",
                         help="Task Description")
-    parser.add_argument("-u", "--user", type=str,
-                        help="User ID")
-    parser.add_argument("-t", "--time", type=str,
+    parser.add_argument("-u", "--user", default=default_user, help="User ID")
+    parser.add_argument("-t", "--time",
                         help="Expected/Completed Date - 11-03-2015")
-    parser.add_argument("--id", type=str,
-                        help="List all existing dodos")
-    parser.add_argument("-f", "--file", type=str,
-                        help="DODO filename")
+    parser.add_argument("--id", help="List all existing dodos")
+    parser.add_argument("-f", "--file", help="DODO filename")
+    parser.add_argument("-i", "--input", help="Import from JSON file")
+    parser.add_argument("-o", "--output", help="Export to JSON file")
     arguments = parser.parse_args()
+
+    if (arguments.operation == default_operation
+        and not os.path.isfile(arguments.file or DODO_FILE)):
+        parser.print_help()
+        sys.exit(0)
+
     quick_access = arguments.quick_access
-    print quick_access
     if quick_access:
         if arguments.quick_access.isdigit():
             arguments.id = quick_access

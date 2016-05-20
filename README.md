@@ -114,8 +114,44 @@ dodo finish --id 1 -u atmb4u -d "dodo new version"
 dodo remove 1
 ```
 
-## Authors
-atmb4u [at] gmail [dot] com
+### Flush finished Tasks
+```bash
+dodo flush
+# will remove all finished or rejected tasks
+```
+
+### Export Tasks
+```bash
+dodo export -o filename.json
+# will export all the tasks to filename.json
+# Can use --output as well
+
+dodo export
+# will print all the tasks in json format
+```
+
+### Import Tasks
+```bash
+dodo import -i filename.json
+# will import all the tasks from filename.json
+# Can use --input as well
+
+Sample Input File Format: [{"id":1, "description":"Read Docs Now", "entry":"20150405T020324Z",
+"status":"pending", "uuid":"1ac1893d-db66-40d7-bf67-77ca7c51a3fc","urgency":"0"}]
+```
+
+
+## Author
+
+[atmb4u](https://github.com/atmb4u)
+
+## Contributors
+
+[btnpushnmunky](https://github.com/btnpushnmunky)
+
+[jsnathan](https://github.com/jsnathan)
+
+[zeroSteiner](https://github.com/zeroSteiner)
 
 
 Thanks to IanCal, GuyOnTheInterweb, elrac1, iambeard for the **super creative** suggestions in [reddit](http://www.reddit.com/r/coding/comments/2zgie7/dodo_task_management_for_developers/)
